@@ -1,50 +1,90 @@
 # Optimizing ksoftirqd Avoidance for Network Packet Processing
 
-## Overview
+## 🚀 Overview
 
-This project proposes and implements a kernel-level optimization method to reduce the involvement of `ksoftirqd` in network packet processing within the Linux kernel. By minimizing `ksoftirqd` intervention, we aim to enhance performance by reducing CPU overhead and improving packet throughput.
+This project implements kernel-level optimizations to minimize the involvement of the `ksoftirqd` thread in Linux network packet processing. By reducing unnecessary `ksoftirqd` wake-ups, we improve CPU efficiency, lower latency, and increase network throughput in high-performance scenarios.
 
-## Background
+Through direct analysis of Linux kernel source code, including NIC interrupts, GRO, SoftIRQ scheduling, DMA, backlog processing, `sk_buff` handling, RFS, and RPS, we explored opportunities to optimize packet reception.
 
-In Linux, network packet processing relies on the `SoftIRQ` mechanism. When packet handling cannot be completed within a short time, the kernel thread `ksoftirqd` is triggered to take over the remaining tasks. However, this often leads to CPU contention and increased latency.
+---
 
-This project introduces a technique to prevent unnecessary wake-ups of `ksoftirqd`, thereby optimizing CPU usage and improving network performance.
+## 🛠 Background
 
-## Goals
+In Linux, network packet processing relies on **SoftIRQs**. NIC interrupts trigger softirqs, but if processing exceeds a time or execution limit, the kernel thread `ksoftirqd` takes over. While this ensures system stability, it also adds CPU overhead and increases latency under sustained traffic.
 
-- Reduce the frequency of `ksoftirqd` activation
-- Improve throughput and lower network latency
-- Evaluate the effectiveness of the approach through controlled experiments
+This project focuses on:
 
-## Implementation
+* Reducing unnecessary `ksoftirqd` activations
+* Optimizing SoftIRQ execution for network packet reception
+* Maintaining system stability while improving throughput
 
-- Analyzed the call path of the `__do_softirq` function in the Linux kernel
-- Modified `__do_softirq` to introduce additional conditional checks that reduce the chance of `ksoftirqd` being woken up
-- Maintained functional compatibility with standard packet handling
+---
 
-## Experimental Setup
+## 🎯 Goals
 
-- **OS**: Ubuntu 22.04
-- **Kernel**: Linux 5.15.90
-- **Network**: 1Gbps P2P LAN
-- **Tool**: `iperf3`
+* Minimize `ksoftirqd` activations during continuous network traffic
+* Reduce CPU overhead caused by SoftIRQ handling
+* Maintain safe and stable kernel operation
+* Demonstrate measurable throughput improvement through controlled experiments
 
-Experiments compared the original and modified kernels over 10 iterations to measure throughput differences.
+---
 
-## Results
+## 🛠 Implementation
 
-| Metric               | Original `__do_softirq` | Modified `__do_softirq` |
-|----------------------|--------------------------|---------------------------|
-| ksoftirqd Activity   | Active                   | Avoided                   |
-| Throughput Change    | Baseline                 | +0.5% to +2% improvement  |
+### Kernel Function Analysis
 
-## Conclusions
+* Traced the **`__do_softirq`** function to understand SoftIRQ execution flow
+* Analyzed **`net_rx_action`** to identify overhead points caused by repeated SoftIRQ handling
 
-The proposed changes to `__do_softirq` successfully minimized `ksoftirqd` activation, resulting in measurable throughput gains. This demonstrates the potential for kernel-level tuning to significantly improve network performance under certain conditions.
+### Key Modifications
 
-## Future Work
+1. **Unlimited SoftIRQ Execution Until Queue Empty**
 
-- **Dynamic Core Allocation**: Adjust IRQ core assignments based on real-time traffic load
-- **Traffic-Aware Scheduling**: Dynamically control `__do_softirq` conditions depending on packet flow
-- **net_rx_action Optimization**: Extend similar logic to `net_rx_action`, with attention to side effects involving other SoftIRQs
+   * Original limits on SoftIRQ execution count and duration were removed
+   * Pending SoftIRQs now execute until the queue is empty
+   * Stability maintained by dynamically pinning CPUs to network receive tasks
+
+2. **Reduced `net_rx_action` Invocation Overhead**
+
+   * Increased internal polling iterations within `net_rx_action`
+   * Reduced the number of function calls, lowering SoftIRQ handling overhead and unnecessary `ksoftirqd` wake-ups
+
+### Safety Considerations
+
+* Dynamic CPU core allocation prevents SoftIRQ execution from starving other processes
+* Verified system stability under sustained network traffic
+
+---
+
+## ⚙ Experimental Setup
+
+* **OS**: Ubuntu 22.04
+* **Kernel**: Linux 5.15.90
+* **Network**: 1 Gbps Point-to-Point LAN
+* **Benchmark Tool**: `iperf3`
+* **Methodology**: 10 iterations per test, comparing original and modified kernel performance
+
+---
+
+## 📊 Results
+
+| Metric                    | Original Kernel | Modified Kernel       |
+| ------------------------- | --------------- | --------------------- |
+| `ksoftirqd` Activity      | Active          | Significantly Reduced |
+| Network Throughput Change | Baseline        | +0.5% \~ +2%          |
+
+* Continuous packet reception showed measurable throughput improvement
+* CPU overhead due to `ksoftirqd` was effectively reduced
+
+---
+
+## ✅ Conclusions
+
+* Modifications successfully minimized `ksoftirqd` activations
+* Network receive path efficiency improved, resulting in measurable throughput gains
+* CPU resources were better utilized without compromising system stability
+
+This demonstrates that targeted kernel-level optimizations can significantly enhance network performance under high-load conditions.
+
+---
 
