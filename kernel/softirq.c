@@ -74,6 +74,7 @@ module_param(count_r, long, 0644);
 
 
 //Functionally, you only need to look at the definition of the __do_softirq function.
+//The remaining parts are flags used for analyzing the experimental results.
 
 
 
